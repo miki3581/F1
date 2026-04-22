@@ -209,3 +209,5 @@ __marimo__/
 cache_folder
 
 .DS_Store
+
+csv_data

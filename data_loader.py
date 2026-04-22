@@ -3,89 +3,123 @@ import os
 import pandas as pd
 import time
 
-# Włączamy cache - to krytyczne przy FastF1, aby nie obciążać serwerów API 
-# i nie pobierać gigabajtów danych telemetrycznych przy każdym uruchomieniu skryptu.
-cache_dir = 'cache_folder'
+# Enabling FastF1 cache
+cache_dir = "cache_folder"
 os.makedirs(cache_dir, exist_ok=True)
 fastf1.Cache.enable_cache(cache_dir)
 
-# Tworzymy folder na wyeksportowane pliki CSV, żeby nie przetwarzać danych dwukrotnie
-csv_dir = 'dane_csv'
+# Creating folder for .csv files
+csv_dir = "csv_data"
 os.makedirs(csv_dir, exist_ok=True)
 
-def pobierz_wyniki_sezonu(rok):
-    plik_wyscigi = f'{csv_dir}/wyscigi_{rok}.csv'
-    plik_kwalifikacje = f'{csv_dir}/kwalifikacje_{rok}.csv'
-    biezacy_rok = pd.Timestamp.now().year
+# Fetch and format session results
+def _fetch_session_data(year, event_name, session_type):
+
+    session = fastf1.get_session(year, event_name, session_type)
+    session.load(telemetry=False, weather=False, messages=False)
+    df = session.results.copy()
+    df["Year"] = year
+    df["EventName"] = event_name
+    return df
+
+# Downloading set year
+def download_season(year):
+
+    race_file = f"{csv_dir}/race_{year}.csv"
+    quali_file = f"{csv_dir}/quali_{year}.csv"
+    sprint_file = f"{csv_dir}/sprint_{year}.csv"
+    sprint_quali_file = f"{csv_dir}/sprint_quali_{year}.csv"
     
-    # Sprawdzenie, czy pobraliśmy już te dane w przeszłości.
-    # Robimy to TYLKO dla zakończonych sezonów, by nie "zamrozić" trwającego roku.
-    if rok < biezacy_rok and os.path.exists(plik_wyscigi) and os.path.exists(plik_kwalifikacje):
-        print(f"Dane dla sezonu {rok} wczytano szybko z lokalnych plików CSV.")
-        return pd.read_csv(plik_wyscigi), pd.read_csv(plik_kwalifikacje)
+    # Checking if data is already downloaded
+    has_base = os.path.exists(race_file) and os.path.exists(quali_file)
+    has_sprint = os.path.exists(sprint_file) and os.path.exists(sprint_quali_file)
+    cache_complete = has_base and (year < 2024 or has_sprint)
+            
+    if cache_complete:
+        print(f"Data for season {year} loaded from cache.")
+        def safe_read(f):
+            return pd.read_csv(f) if os.path.exists(f) and os.path.getsize(f) > 0 else pd.DataFrame()
+        return safe_read(race_file), safe_read(quali_file), safe_read(sprint_file), safe_read(sprint_quali_file)
         
-    print(f"Pobieranie danych dla sezonu {rok} z API FastF1...")
-    harmonogram = fastf1.get_event_schedule(rok)
-    wyniki_wyscigow = []
-    wyniki_kwalifikacji = []
-    sukces_sezonu = True
+    print(f"Downloading data for season {year} from FastF1 API")
+    schedule = fastf1.get_event_schedule(year)
+    results = {"R": [], "Q": [], "S": [], "SQ": []}
+    season_success = True
     
-    for _, event in harmonogram.iterrows():
-        # Pomijamy przedsezonowe testy i wyścigi, które się jeszcze nie odbyły
-        if event['EventFormat'] == 'testing' or event['EventDate'] > pd.Timestamp.now(tz=event['EventDate'].tz):
+    for event in schedule.itertuples():
+
+        # Skipping pre-season testing and races that haven't taken place yet
+        if event.EventFormat == "testing" or event.EventDate > pd.Timestamp.now(tz=event.EventDate.tz):
             continue
             
         try:
-            # Pobieranie wyścigu ('R')
-            sesja_r = fastf1.get_session(rok, event['EventName'], 'R')
-            sesja_r.load(telemetry=False, weather=False, messages=False)
-            df_r = sesja_r.results.copy()  # Używamy .copy() aby uniknąć SettingWithCopyWarning
-            df_r['Year'] = rok
-            df_r['EventName'] = event['EventName']
-            wyniki_wyscigow.append(df_r)
+            results["R"].append(_fetch_session_data(year, event.EventName, "R"))
+            results["Q"].append(_fetch_session_data(year, event.EventName, "Q"))
             
-            # Pobieranie kwalifikacji ('Q')
-            sesja_q = fastf1.get_session(rok, event['EventName'], 'Q')
-            sesja_q.load(telemetry=False, weather=False, messages=False)
-            df_q = sesja_q.results.copy()
-            df_q['Year'] = rok
-            df_q['EventName'] = event['EventName']
-            wyniki_kwalifikacji.append(df_q)
+            # Fetching sprint data from 2024 onwards using EventFormat
+            if year >= 2024 and "sprint" in str(getattr(event, "EventFormat", "")).lower():
+                try:
+                    results["S"].append(_fetch_session_data(year, event.EventName, "S"))
+                    results["SQ"].append(_fetch_session_data(year, event.EventName, "SQ"))
+                except Exception as e_sq:
+                    if "calls/h" in str(e_sq) or "limit" in str(e_sq).lower():
+                        raise e_sq  # Pass rate limit error to the outer block
             
+        # Exeption for hitting API limit
         except Exception as e:
-            print(f"Błąd podczas pobierania {event['EventName']} {rok}: {e}")
-            # Jeśli to limit API, przerywamy pętlę dla tego sezonu, żeby nie zapisać pustych danych
+            print(f"Error downloading {event.EventName} {year}: {e}")
             if "calls/h" in str(e) or "limit" in str(e).lower():
-                print("-> Osiągnięto limit API! Przerwano pobieranie reszty wyścigów w tym sezonie.")
-                sukces_sezonu = False
+                print("API limit reached. Stopping download.")
+                season_success = False
                 break
                 
-        # Małe opóźnienie, żeby być bardziej "przyjaznym" dla API
         time.sleep(0.5)
             
-    df_w = pd.concat(wyniki_wyscigow, ignore_index=True) if wyniki_wyscigow else pd.DataFrame()
-    df_k = pd.concat(wyniki_kwalifikacji, ignore_index=True) if wyniki_kwalifikacji else pd.DataFrame()
+    df_race = pd.concat(results["R"], ignore_index=True) if results["R"] else pd.DataFrame()
+    df_quali = pd.concat(results["Q"], ignore_index=True) if results["Q"] else pd.DataFrame()
+    df_sprint = pd.concat(results["S"], ignore_index=True) if results["S"] else pd.DataFrame()
+    df_sprint_quali = pd.concat(results["SQ"], ignore_index=True) if results["SQ"] else pd.DataFrame()
     
-    # Zapisujemy do CSV TYLKO zakończone sezony na przyszłość
-    if sukces_sezonu and not df_w.empty and not df_k.empty and rok < biezacy_rok:
-        df_w.to_csv(plik_wyscigi, index=False)
-        df_k.to_csv(plik_kwalifikacje, index=False)
-    elif not sukces_sezonu:
-        print(f"-> UWAGA: Nie zapisano CSV dla {rok} z powodu limitu API. Uruchom skrypt ponownie później.")
+    # Saving to CSV
+    if season_success and not df_race.empty and not df_quali.empty:
+        df_race.to_csv(race_file, index=False)
+        df_quali.to_csv(quali_file, index=False)
+        if not df_sprint.empty:
+            df_sprint.to_csv(sprint_file, index=False)
+        if not df_sprint_quali.empty:
+            df_sprint_quali.to_csv(sprint_quali_file, index=False)
+        print(f"Data for {year} successfully saved to CSV.")
+    elif not season_success:
+        print(f"CSV not saved for {year} due to API limit.")
         
-    return df_w, df_k
+    return df_race, df_quali, df_sprint, df_sprint_quali
 
-hist_wyscigi = []
-hist_kwalifikacje = []
-for rok in [2022, 2023, 2024, 2025]:
-    df_w, df_k = pobierz_wyniki_sezonu(rok)
-    hist_wyscigi.append(df_w)
-    hist_kwalifikacje.append(df_k)
+# Automatically determine the current year and the range for historical data
+current_year = pd.Timestamp.now().year
+historical_years = list(range(2018, current_year))
 
-df_historyczne_wyscigi = pd.concat(hist_wyscigi, ignore_index=True)
-df_historyczne_kwalifikacje = pd.concat(hist_kwalifikacje, ignore_index=True)
+hist_results = {"R": [], "Q": [], "S": [], "SQ": []}
 
-df_aktualne_wyscigi, df_aktualne_kwalifikacje = pobierz_wyniki_sezonu(2026)
+print(f"Fetching historical data for years: {historical_years}")
+for year in historical_years:
+    r, q, s, sq = download_season(year)
+    hist_results["R"].append(r)
+    hist_results["Q"].append(q)
+    hist_results["S"].append(s)
+    hist_results["SQ"].append(sq)
 
-print(f"\nSezony historyczne -> Wyścigi: {len(df_historyczne_wyscigi)} rekordów | Kwalifikacje: {len(df_historyczne_kwalifikacje)} rekordów.")
-print(f"Sezon aktualny     -> Wyścigi: {len(df_aktualne_wyscigi)} rekordów | Kwalifikacje: {len(df_aktualne_kwalifikacje)} rekordów.")
+def _concat_dfs(df_list):
+
+    return pd.concat(df_list, ignore_index=True) if df_list else pd.DataFrame()
+
+# Creating 1 DataFrame for each session type
+df_historical_races = _concat_dfs(hist_results["R"])
+df_historical_qualis = _concat_dfs(hist_results["Q"])
+df_historical_sprints = _concat_dfs(hist_results["S"])
+df_historical_sprint_qualis = _concat_dfs(hist_results["SQ"])
+
+print(f"\nFetching current season data for year: {current_year}")
+df_current_races, df_current_qualis, df_current_sprints, df_current_sprint_qualis = download_season(current_year)
+
+print(f"\nHistorical seasons | Races: {len(df_historical_races)} | Qualis: {len(df_historical_qualis)} | Sprints: {len(df_historical_sprints)} | Sprint Qualis: {len(df_historical_sprint_qualis)}")
+print(f"Current season | Races: {len(df_current_races)} | Qualis: {len(df_current_qualis)} | Sprints: {len(df_current_sprints)} | Sprint Qualis: {len(df_current_sprint_qualis)}")
