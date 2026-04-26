@@ -25,7 +25,7 @@ def clean_race_data(df):
     cols_to_drop = [
         "DriverNumber", "BroadcastName", "DriverId", "Abbreviation", 
         "TeamColor", "TeamId", "FirstName", "LastName", "HeadshotUrl", 
-        "CountryCode", "Q1", "Q2", "Q3", "Time", "Points", "Laps",
+        "CountryCode", "Q1", "Q2", "Q3", "Time", "Laps",
         "ClassifiedPosition"
     ]
     df_clean.drop(columns=cols_to_drop, errors="ignore", inplace=True)
