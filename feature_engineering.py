@@ -2,6 +2,27 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 
+def calculate_team_rolling_points(df, window=3):
+    df_fe = df.copy()
+
+    # Aggregate total points scored by each team in each race
+    team_points = df_fe.groupby(['TeamName', 'Year', 'EventName'], sort=False)['Points'].sum().reset_index()
+
+    # Calculate the rolling average of these total team points
+    team_points['TeamRollingAvgPoints'] = (
+        team_points.groupby('TeamName')['Points']
+        .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
+    )
+
+    # Fill the first race with 0.0 points
+    team_points['TeamRollingAvgPoints'] = team_points['TeamRollingAvgPoints'].fillna(0.0)
+
+    # Merge this new feature back into our main driver-level dataframe
+    team_points.drop(columns=['Points'], inplace=True) # Drop so it doesn't conflict with driver Points
+    df_fe = pd.merge(df_fe, team_points, on=['TeamName', 'Year', 'EventName'], how='left')
+    
+    return df_fe
+
 def calculate_driver_rolling_points(df, window=3):
     
     df_fe = df.copy()
@@ -13,9 +34,8 @@ def calculate_driver_rolling_points(df, window=3):
         .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
     )
     
-    # For a driver's very first race in the dataset, the rolling average will be NaN.
-    # We fill this with 0.0 to indicate no prior points.
-    df_fe["DriverRollingAvgPoints"] = df_fe["DriverRollingAvgPoints"].fillna(0.0)
+    # If a driver has no history, assume they perform at their current Team's average (Team Points / 2)
+    df_fe["DriverRollingAvgPoints"] = df_fe["DriverRollingAvgPoints"].fillna(df_fe["TeamRollingAvgPoints"] / 2)
     
     return df_fe
 
@@ -33,30 +53,19 @@ def calculate_driver_rolling_position(df, window=3):
         .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
     )
     
-    # Fill the first race with an average mid-pack position (10.0)
-    df_fe["DriverRollingAvgPosition"] = df_fe["DriverRollingAvgPosition"].fillna(10.0)
-    df_fe.drop(columns=["_ValidPosition"], inplace=True)
-    
-    return df_fe
-
-def calculate_team_rolling_points(df, window=3):
-    df_fe = df.copy()
-
-    # Aggregate total points scored by each team in each race
-    team_points = df_fe.groupby(['TeamName', 'Year', 'EventName'], sort=False)['Points'].sum().reset_index()
-
-    # Calculate the rolling average of these total team points
-    team_points['TeamRollingAvgPoints'] = (
-        team_points.groupby('TeamName')['Points']
+    # Calculate the Team's average finishing position for fallback
+    team_pos = df_fe.groupby(['TeamName', 'Year', 'EventName'], sort=False)['_ValidPosition'].mean().reset_index()
+    team_pos['TeamRollingAvgPosition'] = (
+        team_pos.groupby('TeamName')['_ValidPosition']
         .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
     )
-
-    # Fill the first race with 0.0 points
-    team_points['TeamRollingAvgPoints'] = team_points['TeamRollingAvgPoints'].fillna(0.0)
+    team_pos['TeamRollingAvgPosition'] = team_pos['TeamRollingAvgPosition'].fillna(10.0)
     
-    # Merge this new feature back into our main driver-level dataframe
-    team_points.drop(columns=['Points'], inplace=True) # Drop so it doesn't conflict with driver Points
-    df_fe = pd.merge(df_fe, team_points, on=['TeamName', 'Year', 'EventName'], how='left')
+    df_fe = pd.merge(df_fe, team_pos[['TeamName', 'Year', 'EventName', 'TeamRollingAvgPosition']], on=['TeamName', 'Year', 'EventName'], how='left')
+    
+    # Fill missing rookie positions with the Team's average position
+    df_fe["DriverRollingAvgPosition"] = df_fe["DriverRollingAvgPosition"].fillna(df_fe["TeamRollingAvgPosition"])
+    df_fe.drop(columns=["_ValidPosition", "TeamRollingAvgPosition"], inplace=True)
     
     return df_fe
 
@@ -69,7 +78,8 @@ def calculate_track_affinity(df, window=3):
         df_fe.groupby(["FullName", "EventName"])["Points"]
         .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
     )
-    df_fe["DriverTrackAvgPoints"] = df_fe["DriverTrackAvgPoints"].fillna(0.0)
+    # If new to the track, fallback to their general current form instead of 0
+    df_fe["DriverTrackAvgPoints"] = df_fe["DriverTrackAvgPoints"].fillna(df_fe["DriverRollingAvgPoints"])
     
     # Driver's historical average position at this specific track (ignoring mechanical DNFs)
     df_fe["_ValidPosition"] = df_fe["Position"]
@@ -79,7 +89,8 @@ def calculate_track_affinity(df, window=3):
         df_fe.groupby(["FullName", "EventName"])["_ValidPosition"]
         .transform(lambda x: x.shift(1).rolling(window=window, min_periods=1).mean())
     )
-    df_fe["DriverTrackAvgPosition"] = df_fe["DriverTrackAvgPosition"].fillna(10.0)
+    # If new to the track, fallback to their general current form instead of 10.0
+    df_fe["DriverTrackAvgPosition"] = df_fe["DriverTrackAvgPosition"].fillna(df_fe["DriverRollingAvgPosition"])
     df_fe.drop(columns=["_ValidPosition"], inplace=True)
     
     return df_fe
@@ -114,8 +125,7 @@ def encode_categorical_features(df):
     df_encoded = df.copy()
     categorical_cols = ["EventName", "FullName", "TeamName"]
     
-    # Initialize the Scikit-Learn OneHotEncoder
-    # handle_unknown='ignore' ensures that if a new driver/team appears in the future, it won't crash
+    # One-Hot encoding
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
     
     # Fit and transform the data, converting the resulting numpy array back to a DataFrame
