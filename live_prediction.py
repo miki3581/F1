@@ -41,7 +41,6 @@ def main():
     print(f"Next Event: {event_name} {current_year}")
 
     # Live Qualifying data
-    print("\n--- Fetching Live Qualifying Data ---")
     try:
         session_q = fastf1.get_session(current_year, event_name, 'Q')
         session_q.load(telemetry=False, weather=False, messages=False)
@@ -49,12 +48,12 @@ def main():
         df_live_q["Year"] = current_year
         df_live_q["EventName"] = event_name
     except Exception as e:
-        print(f"\n[!] Could not load Qualifying data for {event_name}. Has it happened yet?")
+        print(f"\nCould not load Qualifying data for {event_name}.")
         print(f"Error details: {e}")
         return
 
     if df_live_q.empty:
-        print(f"\n[!] Qualifying results for {event_name} are empty. Please try again after the session finishes.")
+        print(f"\nQualifying results for {event_name} are empty. Please try again after the session finishes.")
         return
 
     # Building a dummy Race dataframe
