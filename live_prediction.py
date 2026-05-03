@@ -6,18 +6,24 @@ import feature_engineering
 import model
 
 def main():
-    # Loading historical data
+
+    # Loading data
     (df_hist_races, df_hist_qualis, df_hist_sprints,
      df_curr_races, df_curr_qualis, df_curr_sprints) = data_loader.load_all_data()
 
+    # Cleaning data
     df_hist_races_clean = preprocessing.clean_race_data(df_hist_races)
     df_hist_qualis_clean = preprocessing.clean_quali_data(df_hist_qualis)
-    df_hist_merged = preprocessing.merge_data(df_hist_races_clean, df_hist_qualis_clean)
-
+    df_hist_sprints_clean = preprocessing.clean_sprint_data(df_hist_sprints)
     df_curr_races_clean = preprocessing.clean_race_data(df_curr_races)
     df_curr_qualis_clean = preprocessing.clean_quali_data(df_curr_qualis)
-    df_curr_merged = preprocessing.merge_data(df_curr_races_clean, df_curr_qualis_clean)
+    df_curr_sprints_clean = preprocessing.clean_sprint_data(df_curr_sprints)
 
+    # Merging data
+    df_hist_merged = preprocessing.merge_data(df_hist_races_clean, df_hist_qualis_clean, df_hist_sprints_clean)
+    df_curr_merged = preprocessing.merge_data(df_curr_races_clean, df_curr_qualis_clean, df_curr_sprints_clean)
+
+    # Combining historical and current data for Feature Engineering
     df_all = pd.concat([df_hist_merged, df_curr_merged], ignore_index=True)
 
     # Identifing upcoming event
@@ -28,7 +34,7 @@ def main():
     for event in schedule.itertuples():
         if event.EventFormat == "testing":
             continue
-        event_date = pd.Timestamp(event.EventDate)
+        event_date = pd.Timestamp(event.Session5Date)
         if event_date > pd.Timestamp.now(tz=event_date.tz):
             upcoming_events.append(event)
             
@@ -39,6 +45,26 @@ def main():
     next_event = upcoming_events[0]
     event_name = next_event.EventName
     print(f"Next Event: {event_name} {current_year}")
+
+    # Live Sprint data
+    df_live_s = pd.DataFrame()
+    if "sprint" in str(getattr(next_event, "EventFormat", "")).lower():
+        sprint_date = None
+        for i in range(1, 6):
+            if getattr(next_event, f"Session{i}") == "Sprint":
+                sprint_date = pd.Timestamp(getattr(next_event, f"Session{i}Date"))
+                break
+                
+        if sprint_date and pd.Timestamp.now(tz=sprint_date.tz) > sprint_date:
+            try:
+                session_s = fastf1.get_session(current_year, event_name, 'S')
+                session_s.load(telemetry=False, weather=False, messages=False)
+                df_live_s = session_s.results.copy()
+                if not df_live_s.empty:
+                    df_live_s["Year"] = current_year
+                    df_live_s["EventName"] = event_name
+            except Exception as e:
+                print(f"Could not load Sprint data: {e}")
 
     # Live Qualifying data
     try:
@@ -71,9 +97,10 @@ def main():
     # Cleaning and merging live data
     df_live_r_clean = preprocessing.clean_race_data(df_live_r)
     df_live_q_clean = preprocessing.clean_quali_data(df_live_q)
-    df_live_merged = preprocessing.merge_data(df_live_r_clean, df_live_q_clean)
+    df_live_s_clean = preprocessing.clean_sprint_data(df_live_s) if not df_live_s.empty else pd.DataFrame()
+    df_live_merged = preprocessing.merge_data(df_live_r_clean, df_live_q_clean, df_live_s_clean)
 
-    # Appending to the main dataframe
+    # Concating to the main dataframe
     df_all = pd.concat([df_all, df_live_merged], ignore_index=True)
 
     # Feature Engineering
