@@ -1,5 +1,7 @@
 # Formula 1 Race Predictor 🏎️
------------------------------
+
+## <a name="english"></a>🇬🇧 English
+
 ### Overview
 This is a Machine Learning project designed to predict Formula 1 race results. By leveraging historical race data and real-time weekend data via the `fastf1` API, the system applies advanced feature engineering and XGBoost models to forecast driver performances, Top 5 finishes, and exact race rankings.
 
@@ -35,8 +37,6 @@ To run a real-time prediction for the upcoming Sunday race (run this after Quali
 ```bash
 python live_prediction.py
 ```
-
----
 
 ## <a name="polski"></a>🇵🇱 Polski
 
