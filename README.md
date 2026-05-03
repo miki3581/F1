@@ -3,15 +3,13 @@
 ## <a name="english"></a>🇬🇧 English
 
 ### Overview
-This is a Machine Learning project designed to predict Formula 1 race results. By leveraging historical race data and real-time weekend data via the `fastf1` API, the system applies advanced feature engineering and XGBoost models to forecast driver performances, Top 5 finishes, and exact race rankings.
+This is a Machine Learning project designed to predict Formula 1 race results. By leveraging historical race data and real-time weekend data via the `fastf1` API, the system applies advanced feature engineering and XGBoost models to forecast Top 5 finishes.
 
 ### Key Features
 - **Data Integration:** Automatic data fetching for historical races, qualifying sessions, and sprints using `fastf1`.
 - **Feature Engineering:** Calculates team and driver rolling forms, track affinities, and integrates sprint race points to capture current momentum. Handles "Did Not Finish" (DNF) statuses by differentiating mechanical failures from crashes.
-- **Three Modeling Approaches:**
-  - **Classification (`main.py`):** Predicts the probability of a driver finishing in the Top 5 using `XGBClassifier`.
-  - **Regression (`main_regression.py`):** Predicts the exact finishing position using `XGBRegressor`.
-  - **Ranking (`main_ranker.py`):** Groups drivers by race and ranks them using `XGBRanker`.
+- **Modeling Approach:**
+- **Classification (`main.py`):** Predicts the probability of a driver finishing in the Top 5 using `XGBClassifier`.
 - **Live Predictions (`live_prediction.py`):** Automatically identifies the upcoming race weekend, downloads live qualifying (and sprint) data as soon as they finish, and predicts the Sunday Race outcome in real-time.
 
 ### Project Structure
@@ -41,15 +39,13 @@ python live_prediction.py
 ## <a name="polski"></a>🇵🇱 Polski
 
 ### Opis projektu
-Projekt wykorzystujący uczenie maszynowe do przewidywania wyników wyścigów Formuły 1. Dzięki wykorzystaniu danych historycznych oraz danych z trwających weekendów wyścigowych (za pomocą API `fastf1`), system przetwarza zaawansowane cechy statystyczne i używa modeli opartych na algorytmie XGBoost do prognozowania formy kierowców, szans na pozycje w Top 5 oraz dokładnego rankingu wyścigu.
+Projekt wykorzystujący uczenie maszynowe do przewidywania wyników wyścigów Formuły 1. Dzięki wykorzystaniu danych historycznych oraz danych z trwających weekendów wyścigowych (za pomocą API `fastf1`), system przetwarza zaawansowane cechy statystyczne i używa modeli opartych na algorytmie XGBoost do prognozowania szans na pozycje w Top 5.
 
 ### Główne funkcje
 - **Integracja danych:** Automatyczne pobieranie wyników wyścigów, kwalifikacji i sprintów z użyciem `fastf1`.
 - **Inżynieria cech (Feature Engineering):** Obliczanie średniej formy zespołów i kierowców, skuteczności na konkretnym torze (Track Affinity) oraz uwzględnianie punktów ze sprintów. System inteligentnie radzi sobie z nieukończonymi wyścigami (DNF), rozróżniając awarie mechaniczne od wypadków.
-- **Trzy podejścia do modelowania:**
-  - **Klasyfikacja (`main.py`):** Przewiduje prawdopodobieństwo ukończenia wyścigu w pierwszej piątce (Top 5) przy użyciu `XGBClassifier`.
-  - **Regresja (`main_regression.py`):** Przewiduje dokładną pozycję na mecie używając `XGBRegressor`.
-  - **Ranking (`main_ranker.py`):** Sortuje kierowców w obrębie danego wyścigu, używając specjalistycznego algorytmu `XGBRanker`.
+- **Sposób modelowania:**
+- **Klasyfikacja (`main.py`):** Przewiduje prawdopodobieństwo ukończenia wyścigu w pierwszej piątce (Top 5) przy użyciu `XGBClassifier`.
 - **Predykcje na żywo (`live_prediction.py`):** Automatycznie identyfikuje nadchodzący wyścig, pobiera wyniki kwalifikacji (i sprintu) zaraz po ich zakończeniu i w czasie rzeczywistym przewiduje wyniki niedzielnego wyścigu.
 
 ### Struktura projektu
